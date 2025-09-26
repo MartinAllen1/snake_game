@@ -1,0 +1,230 @@
+﻿@page "/"
+@rendermode InteractiveServer
+@using CS3500.Networking
+
+
+<PageTitle>Chat Client</PageTitle>
+
+<h1>Chat Client</h1>
+
+<div id="ConnectionInputs">
+    @if (isConnectionError)
+    {
+        <div class="alert alert-warning" role="alert">
+            @errMsg
+            <button type="button" class="btn-close" @onclick="ClearError"></button>
+        </div>
+    }
+    <div class="input-row">
+        <label for="url"> Server Address: </label>
+        <input id="url" disabled="@network.IsConnected" type="text" @bind="ServerNameOrAddress"/>
+        <label for="url"> Port: </label>
+        <input id="port" disabled="@network.IsConnected" type="number" @bind="ServerPort" class="port"/>
+        @if (network.IsConnected)
+        {
+            <button class="btn btn-primary" @onclick="DisconnectFromServer">Disconnect</button>
+        }
+        else
+        {
+            <button class="btn btn-primary" @onclick="ConnectToServer">Connect</button>
+        }
+    </div>
+
+
+    @{
+        bool disconnected = !network.IsConnected;
+        string grayedOut = disconnected ? "grayedOut" : string.Empty;
+    }
+
+    <div class="input-row">
+        <label for="message"> Chat: </label>
+        <input id="message" class="@grayedOut" value="@msgBox" disabled="@(disconnected)" type="text" @oninput="(e) => msgBox = e.Value?.ToString() ?? string.Empty" @onkeydown="KeyDownHandler"/>
+    </div>
+    <div class="input-row">
+        <div class="input-col">
+            <div id="Messages" class="container @grayedOut">
+                @lock (AllMessages) {
+                    foreach (var line in AllMessages)
+                    {
+                        <span class="themClass">
+                            @line
+                        </span>
+                    }
+                }
+            </div>
+        </div>
+    </div>
+</div>
+
+@code
+{
+    /// <summary>
+    /// Default server name
+    /// </summary>
+    private string ServerNameOrAddress = "localhost";
+
+    /// <summary>
+    /// Default server port
+    /// </summary>
+    private int ServerPort = 11000;
+
+    /// <summary>
+    /// The NetworkConnection object representing a connection with the server
+    /// </summary>
+    private NetworkConnection network = null!;
+
+    /// <summary>
+    /// The input box where user input messages.
+    /// </summary>
+    private string msgBox = string.Empty;
+
+    /// <summary>
+    /// An indicator for connection errors.
+    /// </summary>
+    private bool isConnectionError = false;
+
+    /// <summary>
+    /// Error message for viewing
+    /// </summary>
+    private string errMsg;
+
+    /// <summary>
+    /// The string shown in the message display area, representing all messages seen
+    /// </summary>
+    private string MessageDisplayTextAreaData
+    {
+        get
+        {
+            return string.Join( "\n", AllMessages );
+        }
+    }
+
+    /// <summary>
+    /// All of the messages seen by the server
+    /// </summary>
+    private List<string> AllMessages = new();
+
+
+    /// <summary>
+    /// Disconnect the network object from the server.
+    /// </summary>
+    private void DisconnectFromServer()
+    {
+        // prompt user disconnection
+        var disconnectMsg = "disconnected from server...";
+        lock (AllMessages)
+        {
+            if (AllMessages.Count == 0)
+                AllMessages.Insert(0, disconnectMsg);
+            else if (!AllMessages.First().Equals(disconnectMsg))
+                AllMessages.Insert(0, disconnectMsg);
+            InvokeAsync(StateHasChanged);
+        }
+
+
+        network.Disconnect();
+    }
+
+    /// <summary>
+    /// Clears any errors with connection from the client view.
+    /// </summary>
+    private void ClearError()
+    {
+        isConnectionError = false;
+        StateHasChanged();
+    }
+
+    /// <summary>
+    /// Handler for the connect button
+    /// Attempt to connect to the server, then start an asynchronous loop
+    /// to receive and display messages.
+    /// </summary>
+    private void ConnectToServer()
+    {
+        try
+        {
+            if (!network.IsConnected)
+            {
+                network = new();
+                network.Connect( ServerNameOrAddress, ServerPort );
+            }
+
+            // Communicating with the server needs to be asynchronous so that the UI thread
+            // can continue drawing.
+            new Thread( () =>
+            {
+                while ( network.IsConnected )
+                {
+                    try
+                    {
+                        var message = network.ReadLine();
+                        if (message.Equals(string.Empty)) continue;
+                        message = $"{DateTime.Now:HH:mm tt} - {message}";
+
+                        lock (AllMessages)
+                        {
+                            AllMessages.Insert(0, message);
+                        }
+                        InvokeAsync(StateHasChanged);
+                    }
+                    catch
+                    {
+                        // clear last user's input and chat history
+                        Thread.Sleep(1000);
+                        msgBox = string.Empty;
+                        lock (AllMessages)
+                        {
+                            AllMessages.Clear();
+                        }
+                        InvokeAsync(StateHasChanged);
+                    }
+                }
+
+            } ).Start();
+        }
+        catch
+        {
+            isConnectionError = true;
+            if (ServerPort != 11000)
+                errMsg = "port number not allowed, please use 11000 for now" ;
+            else if (!ServerNameOrAddress.Equals("localhost") && !ServerNameOrAddress.Equals("127.0.0.1"))
+                errMsg = "connection only opens at localhost/127.0.0.1 for now";
+            else
+                errMsg = "unexpected networking error, please reopen the client or try later.";
+        }
+    }
+
+    /// <summary>
+    /// Rewrite the input logic so that user can type same content instead of only onchange
+    /// this also works better for value clearing when a user disconnects
+    /// </summary>
+    /// <param name="e"></param>
+    private void KeyDownHandler(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter")
+            network.Send(msgBox);
+    }
+
+    /// <summary>
+    ///   When the user types a message and presses enter, send the message
+    ///   to the server.
+    /// </summary>
+    /// <param name="e"> Event data containing the message. </param>
+    private void HandleSendMessage( ChangeEventArgs e )
+    {
+        if ( e.Value != null )
+        {
+            network.Send( $"{e.Value}" );
+        }
+    }
+
+    /// <summary>
+    ///   Create a default network object
+    /// </summary>
+    protected override void OnInitialized()
+    {
+        base.OnInitialized();
+        network = new();
+    }
+
+}

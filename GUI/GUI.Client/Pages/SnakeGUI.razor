@@ -1,0 +1,31 @@
+﻿@page "/snake"
+@rendermode InteractiveServer
+@using Blazor.Extensions.Canvas
+@inject IJSRuntime JsRuntime;
+
+<PageTitle> Snake </PageTitle>
+
+<div id="ConnectionInputs" class="mb-3">
+    <div class="input-row">
+        <label for="name"> Player name: </label>
+        <input id="name" type="text" @bind="_playerName"/>
+        <label for="url"> Server Address: </label>
+        <input id="url" type="text" @bind="_serverAddress"/>
+        <label for="url"> Port: </label>
+        <input id="port" type="number" class="port" @bind="_serverPort"/>
+
+        <button class="btn btn-primary" @onclick="ConnectToServer" disabled="@(_controller.IsConnected || string.IsNullOrEmpty(_playerName))">Connect</button>
+        <button class="btn btn-primary" @onclick="DisconnectFromServer" disabled="@(!_controller.IsConnected)">Disconnect</button>
+
+    </div>
+</div>
+
+<div id="snakeCanvas" style="@_canvasStyle">
+    <BECanvas Width="1000" Height="1000" @ref="_canvasReference"></BECanvas>
+    <img src="images/Background.png" hidden alt="" @ref="_backgroundImage">
+    <img src="images/wall.png" hidden alt="" @ref="_wallSprite">
+    <img src="images/star_spawn.png" hidden alt="" @ref="_powerup">
+    <img src="images/star_spawn.png" hidden alt="" @ref="_powerupAnimation">
+    <img src="images/snake_dead.png" hidden alt="" @ref="_ghost">
+    <img src="images/gravestone.png" hidden alt="" @ref="_tomb">
+</div>
